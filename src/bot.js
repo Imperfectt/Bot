@@ -1,7 +1,7 @@
 import { Telegraf, Markup } from "telegraf";
 import dotenv from "dotenv";
 import { db } from "./firebase.js";
-import { addBet } from "./handlers/addBet.js"; // ✅ правкаа
+import { addBet } from "./handlers/addBet.js";
 import { listBets } from "./handlers/listBets.js";
 
 dotenv.config();
@@ -41,7 +41,7 @@ bot.action("add_bet", async (ctx) => {
 });
 
 bot.action("live_bets", async (ctx) => {
-  await listBets(ctx, db);
+  await listBets(ctx, db);   // <-- try/catch будет внутри listBets
 });
 
 bot.on("text", async (ctx) => {
@@ -57,3 +57,4 @@ bot.on("text", async (ctx) => {
 
 bot.launch();
 console.log("Бот запущен!");
+
