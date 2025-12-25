@@ -19,7 +19,7 @@ export async function addBet(ctx, db, session) {
 
     await ctx.reply(`Ставка добавлена!\nID: ${docRef.id}`);
 
-    // Уведомление подруге
+    // увед подруге
     if (process.env.USER_ID) {
       await ctx.telegram.sendMessage(
         process.env.USER_ID,
