@@ -12,17 +12,37 @@ export async function listBets(ctx, db) {
       return ctx.reply("Сейчас нет активных ставок.");
     }
 
-    let msg = "📌 Актуальные ставки:\n\n";
+    // Перебираем ставки по одной и отправляем каждую отдельно
+    for (const doc of snap.docs) {
+      const bet = doc.data();
+      const betId = doc.id;
 
-    snap.forEach((doc) => {
-      const b = doc.data();
-      msg += `• ${b.text}\nID: ${doc.id}\n\n`;
-    });
+      const caption = `📌 Ставка:\n${bet.text || "(без текста)"}\n\nID: ${betId}`;
 
-    await ctx.reply(msg);
+      // Кнопка "Закрыть ставку"
+      const keyboard = {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "❌ Закрыть ставку", callback_data: `close_${betId}` }]
+          ]
+        }
+      };
+
+      // Если есть фото — отправляем фото
+      if (bet.photoId) {
+        await ctx.replyWithPhoto(bet.photoId, {
+          caption,
+          ...keyboard
+        });
+      } else {
+        // Если фото нет — отправляем текст
+        await ctx.reply(caption, keyboard);
+      }
+    }
 
   } catch (error) {
     console.error("Ошибка при получении ставок:", error);
     await ctx.reply("Не удалось загрузить ставки. Попробуй позже.");
   }
 }
+
