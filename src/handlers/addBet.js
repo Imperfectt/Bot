@@ -1,26 +1,60 @@
-export async function addBet(ctx, db, session) {
-  const userId = ctx.from.id;
-  const text = ctx.message.text?.trim();
+import { Telegraf, Markup } from "telegraf";
+import dotenv from "dotenv";
+import { db } from "./firebase.js";
+import { addBet } from "./handlers/addBet.js"; // ✅ исправлено
+import { listBets } from "./handlers/listBets.js";
 
-  if (!text) {
-    return ctx.reply("Текст пустой. Отправь ещё раз.");
-  }
+dotenv.config();
 
-  const bet = {
-    text,
-    status: "active",
-    created_at: Date.now()
-  };
+const bot = new Telegraf(process.env.BOT_TOKEN);
+const ADMIN_ID = Number(process.env.ADMIN_ID);
 
-  const docRef = await db.collection("bets").add(bet);
+const session = new Map();
 
-  await ctx.reply(`Ставка добавлена!\nID: ${docRef.id}`);
+function getSession(userId) {
+  if (!session.has(userId)) session.set(userId, {});
+  return session.get(userId);
+}
 
-  // Уведомление подруге
-  await ctx.telegram.sendMessage(
-    process.env.USER_ID,
-    `📢 Новая ставка:\n\n${text}`
-  );
-
+function clearSession(userId) {
   session.delete(userId);
 }
+
+const mainKeyboard = Markup.inlineKeyboard([
+  [Markup.button.callback("➕ Добавить ставку", "add_bet")],
+  [Markup.button.callback("📌 Актуальные ставки", "live_bets")]
+]);
+
+bot.start((ctx) => {
+  ctx.reply("Привет! Выбери действие:", mainKeyboard);
+});
+
+bot.action("add_bet", async (ctx) => {
+  if (ctx.from.id !== ADMIN_ID) {
+    return ctx.reply("Недостаточно прав.");
+  }
+
+  const s = getSession(ctx.from.id);
+  s.mode = "adding_bet";
+
+  await ctx.reply("Отправь текст ставки одним сообщением.");
+});
+
+bot.action("live_bets", async (ctx) => {
+  await listBets(ctx, db);
+});
+
+bot.on("text", async (ctx) => {
+  const s = getSession(ctx.from.id);
+
+  if (s.mode === "adding_bet") {
+    await addBet(ctx, db, session);
+    return;
+  }
+
+  await ctx.reply("Выбери действие:", mainKeyboard);
+});
+
+bot.launch();
+console.log("Бот запущен!");
+
