@@ -1,7 +1,4 @@
 import admin from "firebase-admin";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 // 🔍 Логируем переменные для отладки
 console.log("🔥 FIREBASE_PROJECT_ID:", process.env.FIREBASE_PROJECT_ID);
@@ -17,5 +14,6 @@ admin.initializeApp({
 });
 
 export const db = admin.firestore();
+
 
 
