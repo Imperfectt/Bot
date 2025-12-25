@@ -1,7 +1,7 @@
 import { Telegraf, Markup } from "telegraf";
 import dotenv from "dotenv";
 import { db } from "./firebase.js";
-import { addBet } from "./handlers/addBet.js"; // ✅ правка
+import { addBet } from "./handlers/addBet.js"; // ✅ правкаа
 import { listBets } from "./handlers/listBets.js";
 
 dotenv.config();
