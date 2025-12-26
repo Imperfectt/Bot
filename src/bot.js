@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import { db } from "./firebase.js";
 import { addBet } from "./handlers/addBet.js";
 import { listBets } from "./handlers/listBets.js";
+import { showAdminMenu, listAllBets } from "./handlers/adminPanel.js";
 
 dotenv.config();
 
@@ -29,7 +30,8 @@ function clearSession(userId) {
 const mainKeyboard = Markup.inlineKeyboard([
   [Markup.button.callback("➕ Добавить ставку", "add_bet")],
   [Markup.button.callback("📌 Актуальные ставки", "live_bets")],
-  [Markup.button.callback("📊 Статистика", "stats")]
+  [Markup.button.callback("📊 Статистика", "stats")],
+  [Markup.button.callback("🔧 Админ‑панель", "admin_panel")]
 ]);
 
 bot.start((ctx) => {
@@ -46,18 +48,56 @@ bot.action("add_bet", async (ctx) => {
 
   const s = getSession(ctx.from.id);
   s.mode = "adding_bet";
+  s.editBetId = null;
 
   await ctx.reply("Отправь текст или фото ставки одним сообщением.");
 });
 
 // -------------------------
-// ТЕКСТ ИЛИ ФОТО ДЛЯ ДОБАВЛЕНИЯ СТАВКИ
+// ТЕКСТ/ФОТО: ДОБАВЛЕНИЕ / РЕДАКТИРОВАНИЕ / ЗАМЕНА ФОТО
 // -------------------------
 bot.on(["text", "photo"], async (ctx) => {
   const s = getSession(ctx.from.id);
 
+  // Добавление новой ставки
   if (s.mode === "adding_bet") {
     await addBet(ctx, db, session);
+    return;
+  }
+
+  // Редактирование текста ставки
+  if (s.mode === "editing_text" && s.editBetId) {
+    const newText = ctx.message.text?.trim();
+    if (!newText) {
+      await ctx.reply("Текст пустой. Отправь новый текст ставки.");
+      return;
+    }
+
+    await db.collection("bets").doc(s.editBetId).update({
+      text: newText
+    });
+
+    await ctx.reply("Текст ставки обновлён.");
+    clearSession(ctx.from.id);
+    return;
+  }
+
+  // Замена фото ставки
+  if (s.mode === "replacing_photo" && s.editBetId) {
+    if (!ctx.message.photo) {
+      await ctx.reply("Отправь фото для замены.");
+      return;
+    }
+
+    const photoId =
+      ctx.message.photo[ctx.message.photo.length - 1].file_id;
+
+    await db.collection("bets").doc(s.editBetId).update({
+      photoId
+    });
+
+    await ctx.reply("Фото ставки обновлено.");
+    clearSession(ctx.from.id);
     return;
   }
 
@@ -69,9 +109,25 @@ bot.on(["text", "photo"], async (ctx) => {
 // -------------------------
 bot.on("callback_query", async (ctx) => {
   const data = ctx.callbackQuery.data;
+  const userId = ctx.from.id;
+
+  // Только админ может в админ‑панель и управлять ставками
+  const isAdmin = userId === ADMIN_ID;
 
   // -------------------------
-  // ПОКАЗАТЬ АКТИВНЫЕ СТАВКИ
+  // АДМИН‑ПАНЕЛЬ
+  // -------------------------
+  if (data === "admin_panel") {
+    if (!isAdmin) {
+      await ctx.reply("Недостаточно прав.");
+      return;
+    }
+    await showAdminMenu(ctx);
+    return;
+  }
+
+  // -------------------------
+  // ПОКАЗАТЬ АКТИВНЫЕ СТАВКИ (видно всем)
   // -------------------------
   if (data === "live_bets") {
     await listBets(ctx, db);
@@ -79,9 +135,26 @@ bot.on("callback_query", async (ctx) => {
   }
 
   // -------------------------
-  // ЗАКРЫТЬ СТАВКУ
+  // СПИСОК ВСЕХ СТАВОК (только админ)
+  // -------------------------
+  if (data === "all_bets") {
+    if (!isAdmin) {
+      await ctx.reply("Недостаточно прав.");
+      return;
+    }
+    await listAllBets(ctx, db);
+    return;
+  }
+
+  // -------------------------
+  // ЗАКРЫТЬ СТАВКУ → ВЫБОР РЕЗУЛЬТАТА
   // -------------------------
   if (data.startsWith("close_")) {
+    if (!isAdmin) {
+      await ctx.reply("Недостаточно прав.");
+      return;
+    }
+
     const betId = data.replace("close_", "");
 
     await ctx.reply(
@@ -98,6 +171,11 @@ bot.on("callback_query", async (ctx) => {
   // РЕЗУЛЬТАТ: ВЫИГРЫШ
   // -------------------------
   if (data.startsWith("win_")) {
+    if (!isAdmin) {
+      await ctx.reply("Недостаточно прав.");
+      return;
+    }
+
     const betId = data.replace("win_", "");
 
     await db.collection("bets").doc(betId).update({
@@ -114,6 +192,11 @@ bot.on("callback_query", async (ctx) => {
   // РЕЗУЛЬТАТ: ПРОИГРЫШ
   // -------------------------
   if (data.startsWith("lose_")) {
+    if (!isAdmin) {
+      await ctx.reply("Недостаточно прав.");
+      return;
+    }
+
     const betId = data.replace("lose_", "");
 
     await db.collection("bets").doc(betId).update({
@@ -127,7 +210,60 @@ bot.on("callback_query", async (ctx) => {
   }
 
   // -------------------------
-  // СТАТИСТИКА
+  // РЕДАКТИРОВАНИЕ ТЕКСТА СТАВКИ
+  // -------------------------
+  if (data.startsWith("edit_")) {
+    if (!isAdmin) {
+      await ctx.reply("Недостаточно прав.");
+      return;
+    }
+
+    const betId = data.replace("edit_", "");
+    const s = getSession(userId);
+    s.mode = "editing_text";
+    s.editBetId = betId;
+
+    await ctx.reply("Отправь новый текст для этой ставки.");
+    return;
+  }
+
+  // -------------------------
+  // ЗАМЕНА ФОТО СТАВКИ
+  // -------------------------
+  if (data.startsWith("photo_")) {
+    if (!isAdmin) {
+      await ctx.reply("Недостаточно прав.");
+      return;
+    }
+
+    const betId = data.replace("photo_", "");
+    const s = getSession(userId);
+    s.mode = "replacing_photo";
+    s.editBetId = betId;
+
+    await ctx.reply("Отправь новое фото для этой ставки.");
+    return;
+  }
+
+  // -------------------------
+  // УДАЛЕНИЕ СТАВКИ
+  // -------------------------
+  if (data.startsWith("delete_")) {
+    if (!isAdmin) {
+      await ctx.reply("Недостаточно прав.");
+      return;
+    }
+
+    const betId = data.replace("delete_", "");
+
+    await db.collection("bets").doc(betId).delete();
+
+    await ctx.reply("Ставка удалена.");
+    return;
+  }
+
+  // -------------------------
+  // СТАТИСТИКА (можно и всем, и только админу — оставил всем)
   // -------------------------
   if (data === "stats") {
     const wins = await db.collection("bets").where("result", "==", "win").get();
@@ -146,9 +282,9 @@ bot.on("callback_query", async (ctx) => {
   }
 });
 
-// -------------------------
 bot.launch();
 console.log("Бот запущен!");
+
 
 
 
