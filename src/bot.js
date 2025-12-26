@@ -9,6 +9,9 @@ dotenv.config();
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_ID = Number(process.env.ADMIN_ID);
 
+// -------------------------
+// СЕССИИ
+// -------------------------
 const session = new Map();
 
 function getSession(userId) {
@@ -20,6 +23,9 @@ function clearSession(userId) {
   session.delete(userId);
 }
 
+// -------------------------
+// ГЛАВНОЕ МЕНЮ
+// -------------------------
 const mainKeyboard = Markup.inlineKeyboard([
   [Markup.button.callback("➕ Добавить ставку", "add_bet")],
   [Markup.button.callback("📌 Актуальные ставки", "live_bets")],
@@ -30,6 +36,9 @@ bot.start((ctx) => {
   ctx.reply("Привет! Выбери действие:", mainKeyboard);
 });
 
+// -------------------------
+// ДОБАВЛЕНИЕ СТАВКИ
+// -------------------------
 bot.action("add_bet", async (ctx) => {
   if (ctx.from.id !== ADMIN_ID) {
     return ctx.reply("Недостаточно прав.");
@@ -41,11 +50,10 @@ bot.action("add_bet", async (ctx) => {
   await ctx.reply("Отправь текст или фото ставки одним сообщением.");
 });
 
-bot.action("live_bets", async (ctx) => {
-  await listBets(ctx, db);
-});
-
-bot.on("text", async (ctx) => {
+// -------------------------
+// ТЕКСТ ИЛИ ФОТО ДЛЯ ДОБАВЛЕНИЯ СТАВКИ
+// -------------------------
+bot.on(["text", "photo"], async (ctx) => {
   const s = getSession(ctx.from.id);
 
   if (s.mode === "adding_bet") {
@@ -56,26 +64,23 @@ bot.on("text", async (ctx) => {
   await ctx.reply("Выбери действие:", mainKeyboard);
 });
 
-bot.on("photo", async (ctx) => {
-  const s = getSession(ctx.from.id);
-
-  if (s.mode === "adding_bet") {
-    await addBet(ctx, db, session);
-    return;
-  }
-
-  await ctx.reply("Выбери действие:", mainKeyboard);
-});
-
-
-// ------------------------------------------------------
-// 🔥 ОБРАБОТКА ЗАКРЫТИЯ СТАВКИ
-// ------------------------------------------------------
-
+// -------------------------
+// ВСЕ CALLBACK-и В ОДНОМ МЕСТЕ
+// -------------------------
 bot.on("callback_query", async (ctx) => {
   const data = ctx.callbackQuery.data;
 
-  // --- 1. Нажали "Закрыть ставку"
+  // -------------------------
+  // ПОКАЗАТЬ АКТИВНЫЕ СТАВКИ
+  // -------------------------
+  if (data === "live_bets") {
+    await listBets(ctx, db);
+    return;
+  }
+
+  // -------------------------
+  // ЗАКРЫТЬ СТАВКУ
+  // -------------------------
   if (data.startsWith("close_")) {
     const betId = data.replace("close_", "");
 
@@ -86,9 +91,12 @@ bot.on("callback_query", async (ctx) => {
         [Markup.button.callback("❌ Проигрыш", `lose_${betId}`)]
       ])
     );
+    return;
   }
 
-  // --- 2. Выбрали "Выигрыш"
+  // -------------------------
+  // РЕЗУЛЬТАТ: ВЫИГРЫШ
+  // -------------------------
   if (data.startsWith("win_")) {
     const betId = data.replace("win_", "");
 
@@ -99,9 +107,12 @@ bot.on("callback_query", async (ctx) => {
     });
 
     await ctx.reply("Ставка закрыта как: ✅ Выигрыш");
+    return;
   }
 
-  // --- 3. Выбрали "Проигрыш"
+  // -------------------------
+  // РЕЗУЛЬТАТ: ПРОИГРЫШ
+  // -------------------------
   if (data.startsWith("lose_")) {
     const betId = data.replace("lose_", "");
 
@@ -112,9 +123,12 @@ bot.on("callback_query", async (ctx) => {
     });
 
     await ctx.reply("Ставка закрыта как: ❌ Проигрыш");
+    return;
   }
 
-  // --- 4. Статистика
+  // -------------------------
+  // СТАТИСТИКА
+  // -------------------------
   if (data === "stats") {
     const wins = await db.collection("bets").where("result", "==", "win").get();
     const loses = await db.collection("bets").where("result", "==", "lose").get();
@@ -128,10 +142,13 @@ bot.on("callback_query", async (ctx) => {
       `Проигрышей: ${loses.size}\n` +
       `Процент: ${percent}%`
     );
+    return;
   }
 });
 
+// -------------------------
 bot.launch();
 console.log("Бот запущен!");
+
 
 
